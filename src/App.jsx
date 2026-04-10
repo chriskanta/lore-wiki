@@ -9,25 +9,33 @@ const FIELDS = {
   lore: ['name', 'description', 'category', 'tags'],
 }
 
+const PASSWORD = 'AnniraKuris'
+
 function App() {
+  const [authed, setAuthed] = useState(false)
+  const [passwordInput, setPasswordInput] = useState('')
+  const [passwordError, setPasswordError] = useState(false)
   const [activeTab, setActiveTab] = useState('characters')
   const [entries, setEntries] = useState([])
   const [form, setForm] = useState({})
   const [showForm, setShowForm] = useState(false)
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState(null)
-
-  useEffect(() => {
-    fetchEntries()
-    setShowForm(false)
-    setSelected(null)
-    setSearch('')
-  }, [activeTab])
+  const [editing, setEditing] = useState(false)
 
   async function fetchEntries() {
     const { data } = await supabase.from(activeTab).select('*').order('created_at', { ascending: false })
     setEntries(data || [])
   }
+  
+  useEffect(() => {
+    if (authed) fetchEntries()
+    setShowForm(false)
+    setSelected(null)
+    setSearch('')
+    setEditing(false)
+  }, [activeTab, authed])
+
 
   async function handleSubmit() {
     if (!form.name) return
@@ -37,10 +45,33 @@ function App() {
     fetchEntries()
   }
 
+  async function handleUpdate() {
+    if (!form.name) return
+    await supabase.from(activeTab).update(form).eq('id', selected.id)
+    setSelected({ ...selected, ...form })
+    setEditing(false)
+    fetchEntries()
+  }
+
   async function handleDelete(id) {
     await supabase.from(activeTab).delete().eq('id', id)
     setSelected(null)
     fetchEntries()
+  }
+
+  function startEdit() {
+    setForm({ ...selected })
+    setEditing(true)
+    setShowForm(false)
+  }
+
+  function handleLogin() {
+    if (passwordInput === PASSWORD) {
+      setAuthed(true)
+      setPasswordError(false)
+    } else {
+      setPasswordError(true)
+    }
   }
 
   const filtered = entries.filter(e =>
@@ -49,9 +80,35 @@ function App() {
 
   const fields = FIELDS[activeTab]
 
+  if (!authed) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'sans-serif', color: '#e5e7eb' }}>
+        <h1 style={{ marginBottom: '2rem' }}>📖 Lore Wiki</h1>
+        <div style={{ background: '#1f2937', padding: '2rem', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '300px' }}>
+          <h3 style={{ margin: 0, textAlign: 'center' }}>Enter Password</h3>
+          <input
+            type="password"
+            placeholder="Password"
+            value={passwordInput}
+            onChange={e => setPasswordInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleLogin()}
+            style={{ padding: '0.6rem', borderRadius: '6px', border: passwordError ? '1px solid #dc2626' : '1px solid #374151', background: '#111827', color: 'white', fontSize: '1rem' }}
+          />
+          {passwordError && <p style={{ margin: 0, color: '#dc2626', fontSize: '0.85rem' }}>Incorrect password</p>}
+          <button onClick={handleLogin} style={{ padding: '0.6rem', background: '#6366f1', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '1rem' }}>
+            Enter
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ maxWidth: '960px', margin: '0 auto', padding: '2rem', fontFamily: 'sans-serif', color: '#e5e7eb' }}>
-      <h1 style={{ marginBottom: '1.5rem' }}>📖 Lore Wiki</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+        <h1 style={{ margin: 0 }}>📖 Lore Wiki</h1>
+        <button onClick={() => setAuthed(false)} style={{ padding: '0.4rem 0.8rem', background: '#374151', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Lock</button>
+      </div>
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -71,12 +128,12 @@ function App() {
           onChange={e => setSearch(e.target.value)}
           style={{ flex: 1, padding: '0.5rem', borderRadius: '6px', border: '1px solid #374151', background: '#1f2937', color: 'white' }}
         />
-        <button onClick={() => { setShowForm(!showForm); setForm({}) }} style={{
+        <button onClick={() => { setShowForm(!showForm); setForm({}); setEditing(false) }} style={{
           padding: '0.5rem 1.2rem', background: '#6366f1', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer'
         }}>+ New Entry</button>
       </div>
 
-      {/* Form */}
+      {/* New Entry Form */}
       {showForm && (
         <div style={{ background: '#1f2937', padding: '1.5rem', borderRadius: '8px', marginBottom: '1.5rem' }}>
           <h3 style={{ marginTop: 0, textTransform: 'capitalize' }}>New {activeTab.slice(0, -1)}</h3>
@@ -103,7 +160,7 @@ function App() {
         <div>
           {filtered.length === 0 && <p style={{ color: '#6b7280' }}>No entries yet.</p>}
           {filtered.map(entry => (
-            <div key={entry.id} onClick={() => setSelected(entry)} style={{
+            <div key={entry.id} onClick={() => { setSelected(entry); setEditing(false) }} style={{
               padding: '1rem', background: selected?.id === entry.id ? '#312e81' : '#1f2937',
               borderRadius: '8px', marginBottom: '0.75rem', cursor: 'pointer',
               border: selected?.id === entry.id ? '1px solid #6366f1' : '1px solid transparent'
@@ -116,21 +173,43 @@ function App() {
 
         {selected && (
           <div style={{ background: '#1f2937', padding: '1.5rem', borderRadius: '8px', alignSelf: 'start' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h2 style={{ margin: 0 }}>{selected.name}</h2>
-              <button onClick={() => handleDelete(selected.id)} style={{
-                padding: '0.4rem 0.8rem', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer'
-              }}>Delete</button>
-            </div>
-            {fields.filter(f => f !== 'name').map(field => selected[field] && (
-              <div key={field} style={{ marginBottom: '1rem' }}>
-                <p style={{ margin: '0 0 0.3rem', color: '#9ca3af', textTransform: 'capitalize', fontSize: '0.85rem' }}>{field}</p>
-                <p style={{ margin: 0 }}>{selected[field]}</p>
-              </div>
-            ))}
-            <button onClick={() => setSelected(null)} style={{
-              marginTop: '1rem', padding: '0.4rem 0.8rem', background: '#374151', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer'
-            }}>Close</button>
+            {editing ? (
+              <>
+                <h3 style={{ marginTop: 0 }}>Edit {activeTab.slice(0, -1)}</h3>
+                {fields.map(field => (
+                  <div key={field} style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', marginBottom: '0.3rem', textTransform: 'capitalize', color: '#9ca3af' }}>{field}</label>
+                    <textarea
+                      value={form[field] || ''}
+                      onChange={e => setForm({ ...form, [field]: e.target.value })}
+                      rows={field === 'description' ? 4 : 2}
+                      style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #374151', background: '#111827', color: 'white', resize: 'vertical', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button onClick={handleUpdate} style={{ padding: '0.5rem 1.2rem', background: '#6366f1', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Save</button>
+                  <button onClick={() => setEditing(false)} style={{ padding: '0.5rem 1.2rem', background: '#374151', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Cancel</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h2 style={{ margin: 0 }}>{selected.name}</h2>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button onClick={startEdit} style={{ padding: '0.4rem 0.8rem', background: '#374151', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Edit</button>
+                    <button onClick={() => handleDelete(selected.id)} style={{ padding: '0.4rem 0.8rem', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Delete</button>
+                  </div>
+                </div>
+                {fields.filter(f => f !== 'name').map(field => selected[field] && (
+                  <div key={field} style={{ marginBottom: '1rem' }}>
+                    <p style={{ margin: '0 0 0.3rem', color: '#9ca3af', textTransform: 'capitalize', fontSize: '0.85rem' }}>{field}</p>
+                    <p style={{ margin: 0 }}>{selected[field]}</p>
+                  </div>
+                ))}
+                <button onClick={() => setSelected(null)} style={{ marginTop: '1rem', padding: '0.4rem 0.8rem', background: '#374151', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Close</button>
+              </>
+            )}
           </div>
         )}
       </div>
