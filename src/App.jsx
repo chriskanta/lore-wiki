@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
 
-const TABS = ['characters', 'locations', 'lore']
+const PASSWORD = 'AnniraKuris'
 
 const FIELDS = {
   characters: ['name', 'description', 'appearance', 'abilities', 'tags'],
@@ -9,32 +9,37 @@ const FIELDS = {
   lore: ['name', 'description', 'category', 'tags'],
 }
 
-const PASSWORD = 'AnniraKuris'
+const SECTION_DESCRIPTIONS = {
+  characters: 'A record of those who have shaped the course of events — warriors, heirs, and those caught between.',
+  locations: 'The lands, settlements, and places of significance across the known world.',
+  lore: 'The histories, factions, and forces that underpin the world as it is known.',
+}
 
-function App() {
+export default function App() {
   const [authed, setAuthed] = useState(false)
   const [passwordInput, setPasswordInput] = useState('')
   const [passwordError, setPasswordError] = useState(false)
+  const [page, setPage] = useState('home')
   const [activeTab, setActiveTab] = useState('characters')
   const [entries, setEntries] = useState([])
+  const [selected, setSelected] = useState(null)
   const [form, setForm] = useState({})
   const [showForm, setShowForm] = useState(false)
-  const [search, setSearch] = useState('')
-  const [selected, setSelected] = useState(null)
   const [editing, setEditing] = useState(false)
+  const [search, setSearch] = useState('')
 
   async function fetchEntries() {
-    const { data } = await supabase.from(activeTab).select('*').order('created_at', { ascending: false })
+    const { data } = await supabase.from(activeTab).select('*').order('name', { ascending: true })
     setEntries(data || [])
   }
   
   useEffect(() => {
-    if (authed) fetchEntries()
-    setShowForm(false)
+    if (authed && page !== 'home') fetchEntries()
     setSelected(null)
-    setSearch('')
+    setShowForm(false)
     setEditing(false)
-  }, [activeTab, authed])
+    setSearch('')
+  }, [page, authed, activeTab])
 
 
   async function handleSubmit() {
@@ -59,12 +64,6 @@ function App() {
     fetchEntries()
   }
 
-  function startEdit() {
-    setForm({ ...selected })
-    setEditing(true)
-    setShowForm(false)
-  }
-
   function handleLogin() {
     if (passwordInput === PASSWORD) {
       setAuthed(true)
@@ -74,147 +73,186 @@ function App() {
     }
   }
 
+  function navigate(destination, tab = null) {
+    setPage(destination)
+    if (tab) setActiveTab(tab)
+  }
+
   const filtered = entries.filter(e =>
     Object.values(e).some(v => v?.toString().toLowerCase().includes(search.toLowerCase()))
   )
 
   const fields = FIELDS[activeTab]
 
+  const styles = {
+    page: { minHeight: '100vh', background: '#0f0f0f', color: '#d4c9b0', fontFamily: 'Georgia, serif' },
+    nav: { borderBottom: '1px solid #2a2a2a', padding: '0 2rem', display: 'flex', alignItems: 'center', gap: '2rem', background: '#111' },
+    navTitle: { fontFamily: 'Georgia, serif', fontSize: '1.1rem', color: '#d4c9b0', padding: '1rem 0', cursor: 'pointer', fontWeight: 'bold', letterSpacing: '0.05em' },
+    navLink: { color: '#9a8f7a', fontSize: '0.9rem', cursor: 'pointer', padding: '1rem 0', borderBottom: '2px solid transparent', textDecoration: 'none' },
+    navLinkActive: { color: '#d4c9b0', borderBottom: '2px solid #8b7355' },
+    navRight: { marginLeft: 'auto', display: 'flex', gap: '1rem', alignItems: 'center' },
+    container: { maxWidth: '860px', margin: '0 auto', padding: '3rem 2rem' },
+    hr: { border: 'none', borderTop: '1px solid #2a2a2a', margin: '2rem 0' },
+    tag: { display: 'inline-block', background: '#1e1e1e', border: '1px solid #2a2a2a', borderRadius: '3px', padding: '0.15rem 0.5rem', fontSize: '0.8rem', color: '#9a8f7a', marginRight: '0.4rem', marginBottom: '0.3rem' },
+    entryCard: { borderBottom: '1px solid #1e1e1e', padding: '1rem 0', cursor: 'pointer' },
+    input: { width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #2a2a2a', background: '#1a1a1a', color: '#d4c9b0', fontFamily: 'Georgia, serif', fontSize: '0.95rem', boxSizing: 'border-box' },
+    textarea: { width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #2a2a2a', background: '#1a1a1a', color: '#d4c9b0', fontFamily: 'Georgia, serif', fontSize: '0.95rem', resize: 'vertical', boxSizing: 'border-box' },
+    btnPrimary: { padding: '0.4rem 1rem', background: '#2a2a2a', color: '#d4c9b0', border: '1px solid #3a3a3a', borderRadius: '3px', cursor: 'pointer', fontFamily: 'Georgia, serif', fontSize: '0.9rem' },
+    btnDanger: { padding: '0.4rem 1rem', background: 'transparent', color: '#8b3a3a', border: '1px solid #5a2a2a', borderRadius: '3px', cursor: 'pointer', fontFamily: 'Georgia, serif', fontSize: '0.9rem' },
+    label: { display: 'block', marginBottom: '0.3rem', color: '#6b6357', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' },
+    sectionLink: { display: 'block', padding: '1.2rem 1.5rem', background: '#141414', border: '1px solid #2a2a2a', borderRadius: '4px', marginBottom: '1rem', cursor: 'pointer', textDecoration: 'none' },
+  }
+
   if (!authed) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'sans-serif', color: '#e5e7eb' }}>
-        <h1 style={{ marginBottom: '2rem' }}>📖 Lore Wiki</h1>
-        <div style={{ background: '#1f2937', padding: '2rem', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '300px' }}>
-          <h3 style={{ margin: 0, textAlign: 'center' }}>Enter Password</h3>
+      <div style={{ ...styles.page, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center', maxWidth: '340px', width: '100%', padding: '2rem' }}>
+          <h1 style={{ fontFamily: 'Georgia, serif', color: '#d4c9b0', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>LORE WIKI</h1>
+          <p style={{ color: '#6b6357', fontSize: '0.9rem', marginBottom: '2rem' }}>This record is restricted.</p>
           <input
             type="password"
-            placeholder="Password"
+            placeholder="Enter passphrase"
             value={passwordInput}
             onChange={e => setPasswordInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleLogin()}
-            style={{ padding: '0.6rem', borderRadius: '6px', border: passwordError ? '1px solid #dc2626' : '1px solid #374151', background: '#111827', color: 'white', fontSize: '1rem' }}
+            style={{ ...styles.input, marginBottom: '0.75rem', textAlign: 'center' }}
           />
-          {passwordError && <p style={{ margin: 0, color: '#dc2626', fontSize: '0.85rem' }}>Incorrect password</p>}
-          <button onClick={handleLogin} style={{ padding: '0.6rem', background: '#6366f1', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '1rem' }}>
-            Enter
-          </button>
+          {passwordError && <p style={{ color: '#8b3a3a', fontSize: '0.85rem', margin: '0 0 0.75rem' }}>Incorrect passphrase.</p>}
+          <button onClick={handleLogin} style={{ ...styles.btnPrimary, width: '100%' }}>Enter</button>
         </div>
       </div>
     )
   }
 
   return (
-    <div style={{ maxWidth: '960px', margin: '0 auto', padding: '2rem', fontFamily: 'sans-serif', color: '#e5e7eb' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h1 style={{ margin: 0 }}>📖 Lore Wiki</h1>
-        <button onClick={() => setAuthed(false)} style={{ padding: '0.4rem 0.8rem', background: '#374151', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Lock</button>
-      </div>
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
-        {TABS.map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)} style={{
-            padding: '0.5rem 1.2rem', border: 'none', borderRadius: '6px', cursor: 'pointer',
-            background: activeTab === tab ? '#6366f1' : '#374151', color: 'white', textTransform: 'capitalize'
-          }}>{tab}</button>
+    <div style={styles.page}>
+      {/* Navbar */}
+      <nav style={styles.nav}>
+        <span style={styles.navTitle} onClick={() => navigate('home')}>⬡ WORLD RECORD</span>
+        {['characters', 'locations', 'lore'].map(tab => (
+          <span
+            key={tab}
+            onClick={() => navigate('section', tab)}
+            style={{ ...styles.navLink, ...(page === 'section' && activeTab === tab ? styles.navLinkActive : {}) }}
+          >
+            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+          </span>
         ))}
-      </div>
+        <div style={styles.navRight}>
+          <span style={{ ...styles.navLink, fontSize: '0.8rem' }} onClick={() => setAuthed(false)}>Lock</span>
+        </div>
+      </nav>
 
-      {/* Search + Add */}
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
-        <input
-          placeholder="Search..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ flex: 1, padding: '0.5rem', borderRadius: '6px', border: '1px solid #374151', background: '#1f2937', color: 'white' }}
-        />
-        <button onClick={() => { setShowForm(!showForm); setForm({}); setEditing(false) }} style={{
-          padding: '0.5rem 1.2rem', background: '#6366f1', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer'
-        }}>+ New Entry</button>
-      </div>
-
-      {/* New Entry Form */}
-      {showForm && (
-        <div style={{ background: '#1f2937', padding: '1.5rem', borderRadius: '8px', marginBottom: '1.5rem' }}>
-          <h3 style={{ marginTop: 0, textTransform: 'capitalize' }}>New {activeTab.slice(0, -1)}</h3>
-          {fields.map(field => (
-            <div key={field} style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.3rem', textTransform: 'capitalize', color: '#9ca3af' }}>{field}</label>
-              <textarea
-                value={form[field] || ''}
-                onChange={e => setForm({ ...form, [field]: e.target.value })}
-                rows={field === 'description' ? 4 : 2}
-                style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #374151', background: '#111827', color: 'white', resize: 'vertical', boxSizing: 'border-box' }}
-              />
+      {/* Home Page */}
+      {page === 'home' && (
+        <div style={styles.container}>
+          <p style={{ color: '#6b6357', fontSize: '0.85rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.5rem' }}>World Record — Public Archive</p>
+          <h1 style={{ fontSize: '2.2rem', color: '#d4c9b0', margin: '0 0 0.5rem', letterSpacing: '0.05em' }}>[WORLD NAME]</h1>
+          <p style={{ color: '#9a8f7a', fontSize: '1rem', marginBottom: '2rem', fontStyle: 'italic' }}>As recorded by those who lived it.</p>
+          <hr style={styles.hr} />
+          <p style={{ lineHeight: '1.9', color: '#b8ad98', fontSize: '1rem' }}>
+            This record concerns the lands, peoples, and events of a world in conflict. Two great clans — long divided by blood and ideology — find themselves drawn toward a reckoning neither sought. From the destruction of a settlement whose name is spoken only in grief, to the emergence of Seiki practitioners whose abilities defy the understanding of their elders, what follows is an account of those who stood at the centre of it all.
+          </p>
+          <p style={{ lineHeight: '1.9', color: '#b8ad98', fontSize: '1rem' }}>
+            The Seiki — an internal force present in all living things, yet mastered by few — has long been the domain of the clan orders. Its states: Flow, Reinforcement, Burst, Suppression. Its dangers: fatigue, burnout, and the slow unravelling of those who push beyond their limit. Its gift: the capacity to change the course of a life, or end one.
+          </p>
+          <p style={{ lineHeight: '1.9', color: '#b8ad98', fontSize: '1rem' }}>
+            What follows is drawn from testimony, observation, and record. Entries are added as understanding grows.
+          </p>
+          <hr style={styles.hr} />
+          <h3 style={{ color: '#9a8f7a', fontSize: '0.85rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '1.5rem' }}>Browse the Archive</h3>
+          {[
+            { tab: 'characters', label: 'Characters', desc: SECTION_DESCRIPTIONS.characters },
+            { tab: 'locations', label: 'Locations', desc: SECTION_DESCRIPTIONS.locations },
+            { tab: 'lore', label: 'Lore', desc: SECTION_DESCRIPTIONS.lore },
+          ].map(({ tab, label, desc }) => (
+            <div key={tab} style={styles.sectionLink} onClick={() => navigate('section', tab)}>
+              <strong style={{ color: '#d4c9b0', fontSize: '1rem' }}>{label}</strong>
+              <p style={{ margin: '0.3rem 0 0', color: '#6b6357', fontSize: '0.9rem' }}>{desc}</p>
             </div>
           ))}
-          <div style={{ display: 'flex', gap: '1rem' }}>
-            <button onClick={handleSubmit} style={{ padding: '0.5rem 1.2rem', background: '#6366f1', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Save</button>
-            <button onClick={() => setShowForm(false)} style={{ padding: '0.5rem 1.2rem', background: '#374151', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Cancel</button>
-          </div>
         </div>
       )}
 
-      {/* Entry list + detail */}
-      <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 2fr' : '1fr', gap: '1.5rem' }}>
-        <div>
-          {filtered.length === 0 && <p style={{ color: '#6b7280' }}>No entries yet.</p>}
+      {/* Section Page */}
+      {page === 'section' && !selected && (
+        <div style={styles.container}>
+          <p style={{ color: '#6b6357', fontSize: '0.85rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Archive — {activeTab}</p>
+          <h1 style={{ fontSize: '1.8rem', color: '#d4c9b0', margin: '0.3rem 0 0.5rem' }}>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1>
+          <p style={{ color: '#9a8f7a', fontStyle: 'italic', marginBottom: '1.5rem' }}>{SECTION_DESCRIPTIONS[activeTab]}</p>
+          <hr style={styles.hr} />
+          <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', alignItems: 'center' }}>
+            <input placeholder="Search entries..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...styles.input, flex: 1 }} />
+            <button onClick={() => { setShowForm(!showForm); setForm({}) }} style={styles.btnPrimary}>+ New Entry</button>
+          </div>
+
+          {showForm && (
+            <div style={{ background: '#141414', border: '1px solid #2a2a2a', borderRadius: '4px', padding: '1.5rem', marginBottom: '2rem' }}>
+              <h3 style={{ color: '#d4c9b0', marginTop: 0 }}>New {activeTab.slice(0, -1)}</h3>
+              {fields.map(field => (
+                <div key={field} style={{ marginBottom: '1rem' }}>
+                  <label style={styles.label}>{field}</label>
+                  <textarea value={form[field] || ''} onChange={e => setForm({ ...form, [field]: e.target.value })} rows={field === 'description' ? 5 : 2} style={styles.textarea} />
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button onClick={handleSubmit} style={styles.btnPrimary}>Save Entry</button>
+                <button onClick={() => setShowForm(false)} style={styles.btnDanger}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {filtered.length === 0 && <p style={{ color: '#6b6357', fontStyle: 'italic' }}>No entries recorded.</p>}
           {filtered.map(entry => (
-            <div key={entry.id} onClick={() => { setSelected(entry); setEditing(false) }} style={{
-              padding: '1rem', background: selected?.id === entry.id ? '#312e81' : '#1f2937',
-              borderRadius: '8px', marginBottom: '0.75rem', cursor: 'pointer',
-              border: selected?.id === entry.id ? '1px solid #6366f1' : '1px solid transparent'
-            }}>
-              <strong>{entry.name}</strong>
-              {entry.tags && <p style={{ margin: '0.3rem 0 0', color: '#9ca3af', fontSize: '0.85rem' }}>{entry.tags}</p>}
+            <div key={entry.id} style={styles.entryCard} onClick={() => setSelected(entry)}>
+              <strong style={{ color: '#d4c9b0', fontSize: '1.05rem' }}>{entry.name}</strong>
+              {entry.description && <p style={{ margin: '0.3rem 0 0.5rem', color: '#9a8f7a', fontSize: '0.9rem', lineHeight: '1.6' }}>{entry.description.slice(0, 120)}{entry.description.length > 120 ? '...' : ''}</p>}
+              {entry.tags && entry.tags.split(',').map(t => <span key={t} style={styles.tag}>{t.trim()}</span>)}
             </div>
           ))}
         </div>
+      )}
 
-        {selected && (
-          <div style={{ background: '#1f2937', padding: '1.5rem', borderRadius: '8px', alignSelf: 'start' }}>
-            {editing ? (
-              <>
-                <h3 style={{ marginTop: 0 }}>Edit {activeTab.slice(0, -1)}</h3>
-                {fields.map(field => (
-                  <div key={field} style={{ marginBottom: '1rem' }}>
-                    <label style={{ display: 'block', marginBottom: '0.3rem', textTransform: 'capitalize', color: '#9ca3af' }}>{field}</label>
-                    <textarea
-                      value={form[field] || ''}
-                      onChange={e => setForm({ ...form, [field]: e.target.value })}
-                      rows={field === 'description' ? 4 : 2}
-                      style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #374151', background: '#111827', color: 'white', resize: 'vertical', boxSizing: 'border-box' }}
-                    />
-                  </div>
-                ))}
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                  <button onClick={handleUpdate} style={{ padding: '0.5rem 1.2rem', background: '#6366f1', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Save</button>
-                  <button onClick={() => setEditing(false)} style={{ padding: '0.5rem 1.2rem', background: '#374151', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Cancel</button>
+      {/* Entry Detail Page */}
+      {page === 'section' && selected && (
+        <div style={styles.container}>
+          <p style={{ color: '#6b6357', fontSize: '0.85rem', letterSpacing: '0.05em', cursor: 'pointer' }} onClick={() => setSelected(null)}>← Back to {activeTab}</p>
+          <hr style={styles.hr} />
+
+          {editing ? (
+            <>
+              <h2 style={{ color: '#d4c9b0', marginTop: 0 }}>Editing: {selected.name}</h2>
+              {fields.map(field => (
+                <div key={field} style={{ marginBottom: '1rem' }}>
+                  <label style={styles.label}>{field}</label>
+                  <textarea value={form[field] || ''} onChange={e => setForm({ ...form, [field]: e.target.value })} rows={field === 'description' ? 5 : 2} style={styles.textarea} />
                 </div>
-              </>
-            ) : (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <h2 style={{ margin: 0 }}>{selected.name}</h2>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button onClick={startEdit} style={{ padding: '0.4rem 0.8rem', background: '#374151', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Edit</button>
-                    <button onClick={() => handleDelete(selected.id)} style={{ padding: '0.4rem 0.8rem', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Delete</button>
-                  </div>
+              ))}
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button onClick={handleUpdate} style={styles.btnPrimary}>Save</button>
+                <button onClick={() => setEditing(false)} style={styles.btnDanger}>Cancel</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h1 style={{ fontSize: '2rem', color: '#d4c9b0', margin: '0 0 0.5rem' }}>{selected.name}</h1>
+              {selected.tags && <div style={{ marginBottom: '1.5rem' }}>{selected.tags.split(',').map(t => <span key={t} style={styles.tag}>{t.trim()}</span>)}</div>}
+              <hr style={styles.hr} />
+              {fields.filter(f => f !== 'name' && f !== 'tags').map(field => selected[field] && (
+                <div key={field} style={{ marginBottom: '1.5rem' }}>
+                  <p style={{ ...styles.label, marginBottom: '0.5rem' }}>{field}</p>
+                  <p style={{ lineHeight: '1.9', color: '#b8ad98', margin: 0 }}>{selected[field]}</p>
                 </div>
-                {fields.filter(f => f !== 'name').map(field => selected[field] && (
-                  <div key={field} style={{ marginBottom: '1rem' }}>
-                    <p style={{ margin: '0 0 0.3rem', color: '#9ca3af', textTransform: 'capitalize', fontSize: '0.85rem' }}>{field}</p>
-                    <p style={{ margin: 0 }}>{selected[field]}</p>
-                  </div>
-                ))}
-                <button onClick={() => setSelected(null)} style={{ marginTop: '1rem', padding: '0.4rem 0.8rem', background: '#374151', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Close</button>
-              </>
-            )}
-          </div>
-        )}
-      </div>
+              ))}
+              <hr style={styles.hr} />
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button onClick={() => { setForm({ ...selected }); setEditing(true) }} style={styles.btnPrimary}>Edit</button>
+                <button onClick={() => handleDelete(selected.id)} style={styles.btnDanger}>Delete Entry</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }
-
-export default App
