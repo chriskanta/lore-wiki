@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabase'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -36,7 +36,7 @@ const EXAMPLE_CHARACTER = {
   relationships: 'Kuris (Mentor)\nAnnira (Acquaintance)\nUnknown Commander (Killer)',
   hair: 'Silver-white, cropped close at the sides, longer on top',
   eyes: 'Grey, with a faint luminescence when Seiki is active',
-  build: 'Tall and lean, broad-shouldered despite his age',
+  build: 'Lean and tall, broad-shouldered despite his age',
   tags: 'grey order, deceased, seiki master, mentor',
   description: `Soran Vael was a senior archivist of the Grey Order and one of the last practitioners of the Veil technique — a Seiki discipline focused entirely on concealment and misdirection rather than force. He was not a warrior in the conventional sense, though those who underestimated him on that basis did not make the mistake twice.
 
@@ -54,9 +54,9 @@ He was also a capable teacher, known for adapting his instruction to the student
 
 const s = {
   page: { minHeight: '100vh', background: '#0f0f0f', color: '#d4c9b0', fontFamily: 'Georgia, serif' },
-  nav: { borderBottom: '1px solid #2a2a2a', padding: '0 2rem', display: 'flex', alignItems: 'center', gap: '2rem', background: '#111' },
-  navTitle: { fontFamily: 'Georgia, serif', fontSize: '1.1rem', color: '#d4c9b0', padding: '1rem 0', cursor: 'pointer', fontWeight: 'bold', letterSpacing: '0.05em' },
-  navLink: { color: '#9a8f7a', fontSize: '0.9rem', cursor: 'pointer', padding: '1rem 0', borderBottom: '2px solid transparent' },
+  nav: { borderBottom: '1px solid #2a2a2a', padding: '0 2rem', display: 'flex', alignItems: 'center', gap: '2rem', background: '#111', position: 'relative' },
+  navTitle: { fontFamily: 'Georgia, serif', fontSize: '1.1rem', color: '#d4c9b0', padding: '1rem 0', cursor: 'pointer', fontWeight: 'bold', letterSpacing: '0.05em', whiteSpace: 'nowrap' },
+  navLink: { color: '#9a8f7a', fontSize: '0.9rem', cursor: 'pointer', padding: '1rem 0', borderBottom: '2px solid transparent', whiteSpace: 'nowrap' },
   navLinkActive: { color: '#d4c9b0', borderBottom: '2px solid #8b7355' },
   container: { maxWidth: '960px', margin: '0 auto', padding: '3rem 2rem' },
   hr: { border: 'none', borderTop: '1px solid #2a2a2a', margin: '2rem 0' },
@@ -123,7 +123,7 @@ function EntryForm({ onSave, onCancel, title, form, setForm, activeTab, imageFil
   )
 }
 
-function EntryDetail({ entry, activeTab, onEdit, onDelete, onBack }) {
+function EntryDetail({ entry, activeTab, onEdit, onDelete, onTagClick }) {
   return (
     <div style={{ overflow: 'hidden' }}>
       <div style={s.infobox}>
@@ -145,11 +145,12 @@ function EntryDetail({ entry, activeTab, onEdit, onDelete, onBack }) {
         {entry.tags && (
           <div style={s.infoboxRow}>
             <span style={{ color: '#6b6357', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tags</span>
-            <div>{entry.tags.split(',').map(t => <span key={t} style={s.tag}>{t.trim()}</span>)}</div>
+            <div>{entry.tags.split(',').map(t => (
+              <span key={t} style={{ ...s.tag, cursor: 'pointer' }} onClick={e => onTagClick(e, t)}>{t.trim()}</span>
+            ))}</div>
           </div>
         )}
       </div>
-
       <h1 style={{ fontSize: '2rem', color: '#d4c9b0', margin: '0 0 1.5rem' }}>{entry.name}</h1>
       {MAIN_FIELDS[activeTab].map(field => entry[field] && (
         <div key={field} style={{ marginBottom: '1.5rem' }}>
@@ -159,14 +160,100 @@ function EntryDetail({ entry, activeTab, onEdit, onDelete, onBack }) {
       ))}
       <div style={{ clear: 'both' }} />
       <hr style={s.hr} />
-      {entry.id !== '__example__' && (
+      {entry.id === '__example__' ? (
+        <p style={{ color: '#6b6357', fontStyle: 'italic', fontSize: '0.85rem' }}>This is an example entry and cannot be edited or deleted.</p>
+      ) : (
         <div style={{ display: 'flex', gap: '1rem' }}>
           <button onClick={onEdit} style={s.btnPrimary}>Edit</button>
           <button onClick={() => onDelete(entry.id)} style={s.btnDanger}>Delete Entry</button>
         </div>
       )}
-      {entry.id === '__example__' && (
-        <p style={{ color: '#6b6357', fontStyle: 'italic', fontSize: '0.85rem' }}>This is an example entry and cannot be edited or deleted.</p>
+    </div>
+  )
+}
+
+function GlobalSearch({ onNavigate }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState([])
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const wrapperRef = useRef(null)
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  useEffect(() => {
+    if (query.trim().length < 2) { setResults([]); setOpen(false); return }
+    const timer = setTimeout(async () => {
+      setLoading(true)
+      const q = query.toLowerCase()
+      const all = []
+      for (const table of ['characters', 'locations', 'lore']) {
+        const { data } = await supabase.from(table).select('*')
+        const matches = (data || [])
+          .filter(e => e.category !== '__homepage__')
+          .filter(e => Object.values(e).some(v => v?.toString().toLowerCase().includes(q)))
+          .map(e => ({ ...e, _table: table }))
+        all.push(...matches)
+      }
+      setResults(all.slice(0, 10))
+      setOpen(true)
+      setLoading(false)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [query])
+
+  function handleSelect(entry) {
+    onNavigate(entry._table, entry)
+    setQuery('')
+    setResults([])
+    setOpen(false)
+  }
+
+  const grouped = ['characters', 'locations', 'lore'].reduce((acc, table) => {
+    const items = results.filter(r => r._table === table)
+    if (items.length) acc[table] = items
+    return acc
+  }, {})
+
+  return (
+    <div ref={wrapperRef} style={{ position: 'relative', flex: 1, maxWidth: '280px' }}>
+      <input
+        placeholder="Search the archive..."
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        onFocus={() => results.length && setOpen(true)}
+        style={{ ...s.input, padding: '0.35rem 0.6rem', fontSize: '0.85rem', background: '#1a1a1a', border: '1px solid #2a2a2a' }}
+      />
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: '#141414', border: '1px solid #2a2a2a', borderRadius: '4px', zIndex: 100, maxHeight: '400px', overflowY: 'auto' }}>
+          {loading && <p style={{ padding: '0.75rem 1rem', color: '#6b6357', margin: 0, fontSize: '0.85rem' }}>Searching...</p>}
+          {!loading && results.length === 0 && <p style={{ padding: '0.75rem 1rem', color: '#6b6357', margin: 0, fontSize: '0.85rem', fontStyle: 'italic' }}>No results found.</p>}
+          {Object.entries(grouped).map(([table, items]) => (
+            <div key={table}>
+              <p style={{ padding: '0.4rem 1rem', margin: 0, color: '#6b6357', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #1e1e1e', background: '#111' }}>{table}</p>
+              {items.map(entry => (
+                <div key={entry.id} onClick={() => handleSelect(entry)} style={{ padding: '0.6rem 1rem', cursor: 'pointer', borderBottom: '1px solid #1a1a1a', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#1e1e1e'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  {entry.image_url && <img src={entry.image_url} alt={entry.name} style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '2px', flexShrink: 0 }} />}
+                  <div>
+                    <strong style={{ color: '#d4c9b0', fontSize: '0.9rem' }}>{entry.name}</strong>
+                    {entry.description && <p style={{ margin: 0, color: '#6b6357', fontSize: '0.8rem' }}>{entry.description.slice(0, 60)}...</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -272,6 +359,32 @@ export default function App() {
     if (tab) setActiveTab(tab)
   }
 
+  function handleGlobalNavigate(table, entry) {
+    setActiveTab(table)
+    setPage('section')
+    setSelected(entry)
+    setShowExample(false)
+    setEditing(false)
+  }
+
+  async function handleTagClick(e, tag) {
+    e.stopPropagation()
+    const trimmed = tag.trim().toLowerCase()
+    for (const table of ['characters', 'locations', 'lore']) {
+      const { data } = await supabase.from(table).select('*')
+      const match = (data || []).find(entry => entry.name?.toLowerCase() === trimmed)
+      if (match) {
+        setActiveTab(table)
+        setPage('section')
+        setSelected(match)
+        setShowExample(false)
+        setEditing(false)
+        return
+      }
+    }
+    setSearch(tag.trim())
+  }
+
   const filteredEntries = entries.filter(e =>
     Object.values(e).some(v => v?.toString().toLowerCase().includes(search.toLowerCase()))
   )
@@ -299,8 +412,9 @@ export default function App() {
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </span>
         ))}
-        <div style={{ marginLeft: 'auto' }}>
-          <span style={{ ...s.navLink, fontSize: '0.8rem' }} onClick={() => setAuthed(false)}>Lock</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <GlobalSearch onNavigate={handleGlobalNavigate} />
+          <span style={{ ...s.navLink, fontSize: '0.8rem', whiteSpace: 'nowrap' }} onClick={() => setAuthed(false)}>Lock</span>
         </div>
       </nav>
 
@@ -369,16 +483,20 @@ export default function App() {
           )}
           {filteredEntries.length === 0 && <p style={{ color: '#6b6357', fontStyle: 'italic' }}>No entries recorded.</p>}
           {filteredEntries.map(entry => (
-            <div key={entry.id} style={s.entryCard} onClick={() => setSelected(entry)}>
-              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                {entry.image_url && <img src={entry.image_url} alt={entry.name} style={{ width: '52px', height: '52px', objectFit: 'cover', borderRadius: '3px', border: '1px solid #2a2a2a', flexShrink: 0 }} />}
+            <div key={entry.id} style={s.entryCard} onClick={() => { setSelected(entry); setShowExample(false) }}>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+                <div style={{ width: '52px', height: '52px', flexShrink: 0, borderRadius: '3px', border: '1px solid #2a2a2a', background: '#1a1a1a', overflow: 'hidden' }}>
+                  {entry.image_url && <img src={entry.image_url} alt={entry.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+                </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <strong style={{ color: '#d4c9b0', fontSize: '1.05rem' }}>{entry.name}</strong>
                     {entry.status && <span style={{ fontSize: '0.75rem', padding: '0.1rem 0.5rem', borderRadius: '3px', border: `1px solid ${statusColour(entry.status)}`, color: statusColour(entry.status) }}>{entry.status}</span>}
                   </div>
-                  {entry.description && <p style={{ margin: '0.3rem 0 0.5rem', color: '#9a8f7a', fontSize: '0.9rem', lineHeight: '1.6' }}>{entry.description.slice(0, 120)}{entry.description.length > 120 ? '...' : ''}</p>}
-                  {entry.tags && entry.tags.split(',').map(t => <span key={t} style={s.tag}>{t.trim()}</span>)}
+                  {entry.description && <p style={{ margin: '0.3rem 0 0.5rem', color: '#9a8f7a', fontSize: '0.9rem', lineHeight: '1.6', textAlign: 'left' }}>{entry.description.slice(0, 120)}{entry.description.length > 120 ? '...' : ''}</p>}
+                  {entry.tags && entry.tags.split(',').map(t => (
+                    <span key={t} style={{ ...s.tag, cursor: 'pointer' }} onClick={e => handleTagClick(e, t)}>{t.trim()}</span>
+                  ))}
                 </div>
               </div>
             </div>
@@ -394,7 +512,11 @@ export default function App() {
             <span style={{ background: '#1e1a14', border: '1px solid #3a3218', color: '#8b7a3a', fontSize: '0.75rem', padding: '0.15rem 0.6rem', borderRadius: '3px' }}>Example Entry</span>
           </div>
           <hr style={s.hr} />
-          <EntryDetail entry={EXAMPLE_CHARACTER} activeTab="characters" onBack={() => setShowExample(false)} />
+          <EntryDetail
+            entry={EXAMPLE_CHARACTER}
+            activeTab="characters"
+            onTagClick={handleTagClick}
+          />
         </div>
       )}
 
@@ -421,7 +543,7 @@ export default function App() {
               activeTab={activeTab}
               onEdit={() => { setForm({ ...selected }); setEditing(true) }}
               onDelete={handleDelete}
-              onBack={() => setSelected(null)}
+              onTagClick={handleTagClick}
             />
           )}
         </div>
