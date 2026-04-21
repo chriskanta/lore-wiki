@@ -4,6 +4,12 @@ import { v4 as uuidv4 } from 'uuid'
 
 const PASSWORD = 'AnniraKuris'
 
+const ERAS = [
+  { name: 'The Age of Conflict', colour: '#7a3a3a', dimColour: '#3a1a1a' },
+  { name: 'The Pact', colour: '#7a6a3a', dimColour: '#3a3018' },
+  { name: 'The Fracture', colour: '#4a6a7a', dimColour: '#1a3040' },
+]
+
 const FIELDS = {
   characters: ['name', 'description', 'appearance', 'abilities', 'status', 'affiliation', 'relationships', 'hair', 'eyes', 'build', 'tags'],
   locations: ['name', 'description', 'geography', 'significance', 'tags'],
@@ -127,6 +133,170 @@ function EntryForm({ onSave, onCancel, title, form, setForm, activeTab, imageFil
   )
 }
 
+function TimelineEventForm({ form, setForm, onSave, onCancel, title }) {
+  return (
+    <div style={{ background: '#141414', border: '1px solid #2a2a2a', borderRadius: '4px', padding: '1.5rem', marginBottom: '2rem' }}>
+      <h3 style={{ color: '#d4c9b0', marginTop: 0 }}>{title}</h3>
+      <div style={{ marginBottom: '1rem' }}>
+        <label style={s.label}>Title</label>
+        <textarea value={form.title || ''} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} rows={1} style={s.textarea} />
+      </div>
+      <div style={{ marginBottom: '1rem' }}>
+        <label style={s.label}>Era</label>
+        <select value={form.era || ''} onChange={e => setForm(p => ({ ...p, era: e.target.value }))}
+          style={{ ...s.input, cursor: 'pointer' }}>
+          <option value="">Select an era...</option>
+          {ERAS.map(era => <option key={era.name} value={era.name}>{era.name}</option>)}
+        </select>
+      </div>
+      <div style={{ marginBottom: '1rem' }}>
+        <label style={s.label}>Description</label>
+        <textarea value={form.description || ''} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} rows={4} style={s.textarea} />
+      </div>
+      <div style={{ marginBottom: '1rem' }}>
+        <label style={s.label}>Linked Entries (comma separated names)</label>
+        <textarea value={form.linked_entries || ''} onChange={e => setForm(p => ({ ...p, linked_entries: e.target.value }))} rows={2} style={s.textarea} placeholder="Kuris, Annira, Feyfair..." />
+      </div>
+      <div style={{ marginBottom: '1rem' }}>
+        <label style={s.label}>Tags</label>
+        <textarea value={form.tags || ''} onChange={e => setForm(p => ({ ...p, tags: e.target.value }))} rows={2} style={s.textarea} />
+      </div>
+      <div style={{ display: 'flex', gap: '1rem' }}>
+        <button onClick={onSave} style={s.btnPrimary}>Save Event</button>
+        <button onClick={onCancel} style={s.btnDanger}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+function TimelinePage({ onEntryClick }) {
+  const [events, setEvents] = useState([])
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({})
+  const [editingEvent, setEditingEvent] = useState(null)
+  const [expandedId, setExpandedId] = useState(null)
+
+  useEffect(() => { fetchEvents() }, [])
+
+  async function fetchEvents() {
+    const { data } = await supabase.from('timeline').select('*').order('created_at', { ascending: true })
+    setEvents(data || [])
+  }
+
+  async function handleSave() {
+    if (!form.title || !form.era) return
+    await supabase.from('timeline').insert([form])
+    setForm({})
+    setShowForm(false)
+    fetchEvents()
+  }
+
+  async function handleUpdate() {
+    if (!form.title || !form.era) return
+    await supabase.from('timeline').update(form).eq('id', editingEvent.id)
+    setEditingEvent(null)
+    setForm({})
+    fetchEvents()
+  }
+
+  async function handleDelete(id) {
+    await supabase.from('timeline').delete().eq('id', id)
+    setExpandedId(null)
+    fetchEvents()
+  }
+
+  const grouped = ERAS.map(era => ({
+    ...era,
+    events: events.filter(e => e.era === era.name)
+  }))
+
+  return (
+    <div style={s.container}>
+      <p style={{ color: '#6b6357', fontSize: '0.85rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Archive — Timeline</p>
+      <h1 style={{ fontSize: '1.8rem', color: '#d4c9b0', margin: '0.3rem 0 0.5rem' }}>Timeline</h1>
+      <p style={{ color: '#9a8f7a', fontStyle: 'italic', marginBottom: '1.5rem' }}>A chronicle of events across the known eras.</p>
+      <hr style={s.hr} />
+      <div style={{ marginBottom: '2rem' }}>
+        <button onClick={() => { setShowForm(!showForm); setForm({}); setEditingEvent(null) }} style={s.btnPrimary}>+ New Event</button>
+      </div>
+
+      {showForm && !editingEvent && (
+        <TimelineEventForm form={form} setForm={setForm} onSave={handleSave} onCancel={() => setShowForm(false)} title="New Event" />
+      )}
+
+      {editingEvent && (
+        <TimelineEventForm form={form} setForm={setForm} onSave={handleUpdate} onCancel={() => { setEditingEvent(null); setForm({}) }} title={`Editing: ${editingEvent.title}`} />
+      )}
+
+      {grouped.map((era, eraIndex) => (
+        <div key={era.name} style={{ marginBottom: '3rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: era.colour, flexShrink: 0 }} />
+            <h2 style={{ margin: 0, fontSize: '1rem', color: era.colour, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{era.name}</h2>
+            <div style={{ flex: 1, height: '1px', background: era.dimColour }} />
+          </div>
+
+          {era.events.length === 0 && (
+            <p style={{ color: '#3a3a3a', fontStyle: 'italic', fontSize: '0.85rem', paddingLeft: '1.5rem' }}>No events recorded for this era.</p>
+          )}
+
+          <div style={{ position: 'relative', paddingLeft: '2rem' }}>
+            {era.events.length > 0 && (
+              <div style={{ position: 'absolute', left: '5px', top: 0, bottom: 0, width: '2px', background: era.dimColour }} />
+            )}
+            {era.events.map((event, i) => {
+              const isExpanded = expandedId === event.id
+              const linkedNames = event.linked_entries ? event.linked_entries.split(',').map(n => n.trim()).filter(Boolean) : []
+              return (
+                <div key={event.id} style={{ position: 'relative', marginBottom: '1.5rem' }}>
+                  <div style={{ position: 'absolute', left: '-1.75rem', top: '0.6rem', width: '10px', height: '10px', borderRadius: '50%', background: era.colour, border: `2px solid #0f0f0f` }} />
+                  <div
+                    style={{ background: '#141414', border: `1px solid ${isExpanded ? era.colour : '#2a2a2a'}`, borderRadius: '4px', padding: '1rem 1.2rem', cursor: 'pointer', transition: 'border-color 0.2s' }}
+                    onClick={() => setExpandedId(isExpanded ? null : event.id)}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <strong style={{ color: '#d4c9b0', fontSize: '1rem' }}>{event.title}</strong>
+                      <span style={{ color: '#6b6357', fontSize: '0.8rem', marginLeft: '1rem', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
+                    </div>
+                    {!isExpanded && event.description && (
+                      <p style={{ margin: '0.3rem 0 0', color: '#6b6357', fontSize: '0.85rem' }}>{event.description.slice(0, 100)}{event.description.length > 100 ? '...' : ''}</p>
+                    )}
+                    {isExpanded && (
+                      <div style={{ marginTop: '1rem' }}>
+                        <TextBlock text={event.description} />
+                        {linkedNames.length > 0 && (
+                          <div style={{ marginTop: '0.5rem' }}>
+                            <span style={{ color: '#6b6357', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Related — </span>
+                            {linkedNames.map(name => (
+                              <span key={name} onClick={e => { e.stopPropagation(); onEntryClick(name) }}
+                                style={{ ...s.tag, cursor: 'pointer', borderColor: era.dimColour, color: era.colour }}>
+                                {name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {event.tags && (
+                          <div style={{ marginTop: '0.5rem' }}>
+                            {event.tags.split(',').map(t => <span key={t} style={s.tag}>{t.trim()}</span>)}
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                          <button onClick={e => { e.stopPropagation(); setEditingEvent(event); setForm({ ...event }); setShowForm(false) }} style={s.btnPrimary}>Edit</button>
+                          <button onClick={e => { e.stopPropagation(); handleDelete(event.id) }} style={s.btnDanger}>Delete</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function MembersList({ members, onMemberClick }) {
   if (!members) return null
   const lines = members.split('\n').filter(l => l.trim())
@@ -177,23 +347,19 @@ function EntryDetail({ entry, activeTab, onEdit, onDelete, onTagClick, onMemberC
           </div>
         )}
       </div>
-
       <h1 style={{ fontSize: '2rem', color: '#d4c9b0', margin: '0 0 1.5rem' }}>{entry.name}</h1>
-
       {MAIN_FIELDS[activeTab].map(field => entry[field] && (
         <div key={field} style={{ marginBottom: '1.5rem' }}>
           <h3 style={{ color: '#9a8f7a', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.1em', borderBottom: '1px solid #2a2a2a', paddingBottom: '0.4rem', marginBottom: '0.75rem' }}>{field}</h3>
           <TextBlock text={entry[field]} />
         </div>
       ))}
-
       {activeTab === 'factions' && entry.members && (
         <div style={{ marginBottom: '1.5rem' }}>
           <h3 style={{ color: '#9a8f7a', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.1em', borderBottom: '1px solid #2a2a2a', paddingBottom: '0.4rem', marginBottom: '0.75rem' }}>Members</h3>
           <MembersList members={entry.members} onMemberClick={onMemberClick} />
         </div>
       )}
-
       <div style={{ clear: 'both' }} />
       <hr style={s.hr} />
       {entry.id === '__example__' ? (
@@ -337,7 +503,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (authed && page !== 'home') fetchEntries()
+    if (authed && page !== 'home' && page !== 'timeline') fetchEntries()
     setSelected(null)
     setShowForm(false)
     setEditing(false)
@@ -436,6 +602,22 @@ export default function App() {
     }
   }
 
+  async function handleTimelineEntryClick(name) {
+    const clean = name.toLowerCase()
+    for (const table of ['characters', 'locations', 'lore', 'factions']) {
+      const { data } = await supabase.from(table).select('*')
+      const match = (data || []).find(e => e.name?.toLowerCase() === clean)
+      if (match) {
+        setActiveTab(table)
+        setPage('section')
+        setSelected(match)
+        setShowExample(false)
+        setEditing(false)
+        return
+      }
+    }
+  }
+
   const filteredEntries = entries.filter(e =>
     Object.values(e).some(v => v?.toString().toLowerCase().includes(search.toLowerCase()))
   )
@@ -463,6 +645,9 @@ export default function App() {
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </span>
         ))}
+        <span onClick={() => navigate('timeline')} style={{ ...s.navLink, ...(page === 'timeline' ? s.navLinkActive : {}) }}>
+          Timeline
+        </span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <GlobalSearch onNavigate={handleGlobalNavigate} />
           <span style={{ ...s.navLink, fontSize: '0.8rem', whiteSpace: 'nowrap' }} onClick={() => setAuthed(false)}>Lock</span>
@@ -497,13 +682,19 @@ export default function App() {
             { tab: 'locations', label: 'Locations', desc: SECTION_DESCRIPTIONS.locations },
             { tab: 'lore', label: 'Lore', desc: SECTION_DESCRIPTIONS.lore },
             { tab: 'factions', label: 'Factions', desc: SECTION_DESCRIPTIONS.factions },
+            { tab: 'timeline', label: 'Timeline', desc: 'A chronicle of events across the known eras.' },
           ].map(({ tab, label, desc }) => (
-            <div key={tab} style={s.sectionLink} onClick={() => navigate('section', tab)}>
+            <div key={tab} style={s.sectionLink} onClick={() => tab === 'timeline' ? navigate('timeline') : navigate('section', tab)}>
               <strong style={{ color: '#d4c9b0' }}>{label}</strong>
               <p style={{ margin: '0.3rem 0 0', color: '#6b6357', fontSize: '0.9rem' }}>{desc}</p>
             </div>
           ))}
         </div>
+      )}
+
+      {/* Timeline */}
+      {page === 'timeline' && (
+        <TimelinePage onEntryClick={handleTimelineEntryClick} />
       )}
 
       {/* Section list */}
@@ -564,12 +755,7 @@ export default function App() {
             <span style={{ background: '#1e1a14', border: '1px solid #3a3218', color: '#8b7a3a', fontSize: '0.75rem', padding: '0.15rem 0.6rem', borderRadius: '3px' }}>Example Entry</span>
           </div>
           <hr style={s.hr} />
-          <EntryDetail
-            entry={EXAMPLE_CHARACTER}
-            activeTab="characters"
-            onTagClick={handleTagClick}
-            onMemberClick={handleMemberClick}
-          />
+          <EntryDetail entry={EXAMPLE_CHARACTER} activeTab="characters" onTagClick={handleTagClick} onMemberClick={handleMemberClick} />
         </div>
       )}
 
