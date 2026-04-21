@@ -8,24 +8,28 @@ const FIELDS = {
   characters: ['name', 'description', 'appearance', 'abilities', 'status', 'affiliation', 'relationships', 'hair', 'eyes', 'build', 'tags'],
   locations: ['name', 'description', 'geography', 'significance', 'tags'],
   lore: ['name', 'description', 'category', 'tags'],
+  factions: ['name', 'description', 'leader', 'members', 'tags'],
 }
 
 const INFOBOX_FIELDS = {
   characters: ['status', 'affiliation', 'relationships', 'hair', 'eyes', 'build'],
   locations: ['significance'],
   lore: ['category'],
+  factions: ['leader'],
 }
 
 const MAIN_FIELDS = {
   characters: ['description', 'appearance', 'abilities'],
   locations: ['description', 'geography'],
   lore: ['description'],
+  factions: ['description'],
 }
 
 const SECTION_DESCRIPTIONS = {
   characters: 'A record of those who have shaped the course of events — warriors, heirs, and those caught between.',
   locations: 'The lands, settlements, and places of significance across the known world.',
   lore: 'The histories, factions, and forces that underpin the world as it is known.',
+  factions: 'The clans, orders, and factions whose ambitions have shaped the course of history.',
 }
 
 const EXAMPLE_CHARACTER = {
@@ -106,7 +110,7 @@ function EntryForm({ onSave, onCancel, title, form, setForm, activeTab, imageFil
           <textarea
             value={form[field] || ''}
             onChange={e => setForm(prev => ({ ...prev, [field]: e.target.value }))}
-            rows={['description', 'relationships', 'appearance', 'abilities'].includes(field) ? 4 : 2}
+            rows={['description', 'relationships', 'appearance', 'abilities', 'members'].includes(field) ? 4 : 2}
             style={s.textarea}
           />
         </div>
@@ -123,7 +127,29 @@ function EntryForm({ onSave, onCancel, title, form, setForm, activeTab, imageFil
   )
 }
 
-function EntryDetail({ entry, activeTab, onEdit, onDelete, onTagClick }) {
+function MembersList({ members, onMemberClick }) {
+  if (!members) return null
+  const lines = members.split('\n').filter(l => l.trim())
+  return (
+    <div>
+      {lines.map((line, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+          <span style={{ color: '#6b6357', fontSize: '0.85rem' }}>—</span>
+          <span
+            style={{ color: '#c4b99a', fontSize: '0.95rem', cursor: 'pointer', borderBottom: '1px solid #3a3a3a', lineHeight: '1.4' }}
+            onClick={() => onMemberClick(line.trim())}
+            onMouseEnter={e => e.currentTarget.style.color = '#d4c9b0'}
+            onMouseLeave={e => e.currentTarget.style.color = '#c4b99a'}
+          >
+            {line.trim()}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function EntryDetail({ entry, activeTab, onEdit, onDelete, onTagClick, onMemberClick }) {
   return (
     <div style={{ overflow: 'hidden' }}>
       <div style={s.infobox}>
@@ -151,13 +177,23 @@ function EntryDetail({ entry, activeTab, onEdit, onDelete, onTagClick }) {
           </div>
         )}
       </div>
+
       <h1 style={{ fontSize: '2rem', color: '#d4c9b0', margin: '0 0 1.5rem' }}>{entry.name}</h1>
+
       {MAIN_FIELDS[activeTab].map(field => entry[field] && (
         <div key={field} style={{ marginBottom: '1.5rem' }}>
           <h3 style={{ color: '#9a8f7a', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.1em', borderBottom: '1px solid #2a2a2a', paddingBottom: '0.4rem', marginBottom: '0.75rem' }}>{field}</h3>
           <TextBlock text={entry[field]} />
         </div>
       ))}
+
+      {activeTab === 'factions' && entry.members && (
+        <div style={{ marginBottom: '1.5rem' }}>
+          <h3 style={{ color: '#9a8f7a', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.1em', borderBottom: '1px solid #2a2a2a', paddingBottom: '0.4rem', marginBottom: '0.75rem' }}>Members</h3>
+          <MembersList members={entry.members} onMemberClick={onMemberClick} />
+        </div>
+      )}
+
       <div style={{ clear: 'both' }} />
       <hr style={s.hr} />
       {entry.id === '__example__' ? (
@@ -181,9 +217,7 @@ function GlobalSearch({ onNavigate }) {
 
   useEffect(() => {
     function handleClickOutside(e) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
-        setOpen(false)
-      }
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setOpen(false)
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -195,7 +229,7 @@ function GlobalSearch({ onNavigate }) {
       setLoading(true)
       const q = query.toLowerCase()
       const all = []
-      for (const table of ['characters', 'locations', 'lore']) {
+      for (const table of ['characters', 'locations', 'lore', 'factions']) {
         const { data } = await supabase.from(table).select('*')
         const matches = (data || [])
           .filter(e => e.category !== '__homepage__')
@@ -217,7 +251,7 @@ function GlobalSearch({ onNavigate }) {
     setOpen(false)
   }
 
-  const grouped = ['characters', 'locations', 'lore'].reduce((acc, table) => {
+  const grouped = ['characters', 'locations', 'lore', 'factions'].reduce((acc, table) => {
     const items = results.filter(r => r._table === table)
     if (items.length) acc[table] = items
     return acc
@@ -240,7 +274,8 @@ function GlobalSearch({ onNavigate }) {
             <div key={table}>
               <p style={{ padding: '0.4rem 1rem', margin: 0, color: '#6b6357', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #1e1e1e', background: '#111' }}>{table}</p>
               {items.map(entry => (
-                <div key={entry.id} onClick={() => handleSelect(entry)} style={{ padding: '0.6rem 1rem', cursor: 'pointer', borderBottom: '1px solid #1a1a1a', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                <div key={entry.id} onClick={() => handleSelect(entry)}
+                  style={{ padding: '0.6rem 1rem', cursor: 'pointer', borderBottom: '1px solid #1a1a1a', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                   onMouseEnter={e => e.currentTarget.style.background = '#1e1e1e'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
@@ -370,7 +405,7 @@ export default function App() {
   async function handleTagClick(e, tag) {
     e.stopPropagation()
     const trimmed = tag.trim().toLowerCase()
-    for (const table of ['characters', 'locations', 'lore']) {
+    for (const table of ['characters', 'locations', 'lore', 'factions']) {
       const { data } = await supabase.from(table).select('*')
       const match = (data || []).find(entry => entry.name?.toLowerCase() === trimmed)
       if (match) {
@@ -383,6 +418,22 @@ export default function App() {
       }
     }
     setSearch(tag.trim())
+  }
+
+  async function handleMemberClick(memberName) {
+    const clean = memberName.toLowerCase()
+    for (const table of ['characters', 'locations', 'lore', 'factions']) {
+      const { data } = await supabase.from(table).select('*')
+      const match = (data || []).find(e => e.name?.toLowerCase() === clean)
+      if (match) {
+        setActiveTab(table)
+        setPage('section')
+        setSelected(match)
+        setShowExample(false)
+        setEditing(false)
+        return
+      }
+    }
   }
 
   const filteredEntries = entries.filter(e =>
@@ -407,7 +458,7 @@ export default function App() {
     <div style={s.page}>
       <nav style={s.nav}>
         <span style={s.navTitle} onClick={() => navigate('home')}>⬡ WORLD RECORD</span>
-        {['characters', 'locations', 'lore'].map(tab => (
+        {['characters', 'locations', 'lore', 'factions'].map(tab => (
           <span key={tab} onClick={() => navigate('section', tab)} style={{ ...s.navLink, ...(page === 'section' && activeTab === tab ? s.navLinkActive : {}) }}>
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </span>
@@ -445,6 +496,7 @@ export default function App() {
             { tab: 'characters', label: 'Characters', desc: SECTION_DESCRIPTIONS.characters },
             { tab: 'locations', label: 'Locations', desc: SECTION_DESCRIPTIONS.locations },
             { tab: 'lore', label: 'Lore', desc: SECTION_DESCRIPTIONS.lore },
+            { tab: 'factions', label: 'Factions', desc: SECTION_DESCRIPTIONS.factions },
           ].map(({ tab, label, desc }) => (
             <div key={tab} style={s.sectionLink} onClick={() => navigate('section', tab)}>
               <strong style={{ color: '#d4c9b0' }}>{label}</strong>
@@ -516,6 +568,7 @@ export default function App() {
             entry={EXAMPLE_CHARACTER}
             activeTab="characters"
             onTagClick={handleTagClick}
+            onMemberClick={handleMemberClick}
           />
         </div>
       )}
@@ -544,6 +597,7 @@ export default function App() {
               onEdit={() => { setForm({ ...selected }); setEditing(true) }}
               onDelete={handleDelete}
               onTagClick={handleTagClick}
+              onMemberClick={handleMemberClick}
             />
           )}
         </div>
