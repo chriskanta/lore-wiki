@@ -105,6 +105,289 @@ function statusColour(status) {
   return '#9a8f7a'
 }
 
+function relationshipColour(type) {
+  if (!type) return '#4a5568'
+  const t = type.toLowerCase()
+  if (t.includes('beloved') || t.includes('lover') || t.includes('romantic') || t.includes('love interest')) return '#8b4a6a'
+  if (t.includes('friend') || t.includes('ally')) return '#4a7a4a'
+  if (t.includes('rival') || t.includes('enemy') || t.includes('killer') || t.includes('antagonist')) return '#7a4a4a'
+  if (t.includes('family') || t.includes('mother') || t.includes('father') || t.includes('sister') || t.includes('brother') || t.includes('grandmother') || t.includes('grandfather') || t.includes('son') || t.includes('daughter')) return '#6a4a7a'
+  if (t.includes('mentor') || t.includes('student') || t.includes('teacher')) return '#4a6a7a'
+  return '#5a5a4a'
+}
+
+function parseRelationships(text) {
+  if (!text) return []
+  return text.split('\n').map(line => {
+    const match = line.match(/^(.+?)\s*\((.+?)\)\s*$/)
+    if (match) return { name: match[1].trim(), type: match[2].trim() }
+    return { name: line.trim(), type: '' }
+  }).filter(r => r.name)
+}
+
+function RelationshipMap({ characters, onCharacterClick }) {
+  const canvasRef = useRef(null)
+  const animRef = useRef(null)
+  const nodesRef = useRef([])
+  const edgesRef = useRef([])
+  const dragRef = useRef(null)
+  const [tooltip, setTooltip] = useState(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || characters.length === 0) return
+    const W = canvas.offsetWidth
+    const H = canvas.offsetHeight
+    canvas.width = W
+    canvas.height = H
+
+    // Build nodes
+    const nodes = characters.map((c, i) => ({
+      id: c.name,
+      character: c,
+      x: W / 2 + Math.cos((i / characters.length) * Math.PI * 2) * 180,
+      y: H / 2 + Math.sin((i / characters.length) * Math.PI * 2) * 180,
+      vx: 0, vy: 0,
+      r: 28,
+    }))
+
+    // Build edges
+    const edges = []
+    const seen = new Set()
+    characters.forEach(c => {
+      const rels = parseRelationships(c.relationships)
+      rels.forEach(rel => {
+        const target = nodes.find(n => n.id.toLowerCase() === rel.name.toLowerCase())
+        if (!target) return
+        const key = [c.name, rel.name].sort().join('|')
+        if (!seen.has(key)) {
+          seen.add(key)
+          edges.push({ from: c.name, to: rel.name, type: rel.type })
+        }
+      })
+    })
+
+    nodesRef.current = nodes
+    edgesRef.current = edges
+
+    function simulate() {
+      const ns = nodesRef.current
+      const repulsion = 3500
+      const springLen = 200
+      const springK = 0.03
+      const damping = 0.85
+      const centerPull = 0.005
+
+      for (let i = 0; i < ns.length; i++) {
+        let fx = 0, fy = 0
+        // Repulsion
+        for (let j = 0; j < ns.length; j++) {
+          if (i === j) continue
+          const dx = ns[i].x - ns[j].x
+          const dy = ns[i].y - ns[j].y
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1
+          const force = repulsion / (dist * dist)
+          fx += (dx / dist) * force
+          fy += (dy / dist) * force
+        }
+        // Spring attraction for edges
+        edgesRef.current.forEach(e => {
+          const other = e.from === ns[i].id ? ns.find(n => n.id === e.to) : e.to === ns[i].id ? ns.find(n => n.id === e.from) : null
+          if (!other) return
+          const dx = other.x - ns[i].x
+          const dy = other.y - ns[i].y
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1
+          const stretch = dist - springLen
+          fx += dx / dist * stretch * springK
+          fy += dy / dist * stretch * springK
+        })
+        // Center pull
+        fx += (W / 2 - ns[i].x) * centerPull
+        fy += (H / 2 - ns[i].y) * centerPull
+
+        if (dragRef.current?.id !== ns[i].id) {
+          ns[i].vx = (ns[i].vx + fx) * damping
+          ns[i].vy = (ns[i].vy + fy) * damping
+          ns[i].x += ns[i].vx
+          ns[i].y += ns[i].vy
+          ns[i].x = Math.max(ns[i].r + 5, Math.min(W - ns[i].r - 5, ns[i].x))
+          ns[i].y = Math.max(ns[i].r + 5, Math.min(H - ns[i].r - 5, ns[i].y))
+        }
+      }
+    }
+
+    function draw() {
+      const ctx = canvas.getContext('2d')
+      const ns = nodesRef.current
+      const es = edgesRef.current
+      ctx.clearRect(0, 0, W, H)
+      ctx.fillStyle = '#0f0f0f'
+      ctx.fillRect(0, 0, W, H)
+
+      // Draw edges
+      es.forEach(e => {
+        const from = ns.find(n => n.id === e.from)
+        const to = ns.find(n => n.id === e.to)
+        if (!from || !to) return
+        const colour = relationshipColour(e.type)
+        ctx.beginPath()
+        ctx.moveTo(from.x, from.y)
+        ctx.lineTo(to.x, to.y)
+        ctx.strokeStyle = colour
+        ctx.lineWidth = 1.5
+        ctx.globalAlpha = 0.6
+        ctx.stroke()
+        ctx.globalAlpha = 1
+
+        // Edge label
+        if (e.type) {
+          const mx = (from.x + to.x) / 2
+          const my = (from.y + to.y) / 2
+          ctx.font = '10px Georgia'
+          ctx.fillStyle = colour
+          ctx.globalAlpha = 0.8
+          ctx.textAlign = 'center'
+          ctx.fillText(e.type, mx, my - 4)
+          ctx.globalAlpha = 1
+        }
+      })
+
+      // Draw nodes
+      ns.forEach(n => {
+        const sc = statusColour(n.character.status)
+        // Outer ring
+        ctx.beginPath()
+        ctx.arc(n.x, n.y, n.r + 2, 0, Math.PI * 2)
+        ctx.fillStyle = sc
+        ctx.globalAlpha = 0.3
+        ctx.fill()
+        ctx.globalAlpha = 1
+
+        // Node background
+        ctx.beginPath()
+        ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2)
+        ctx.fillStyle = '#1a1a1a'
+        ctx.fill()
+        ctx.strokeStyle = sc
+        ctx.lineWidth = 1.5
+        ctx.stroke()
+
+        // Image or initial
+        if (n.character.image_url) {
+          const img = new Image()
+          img.src = n.character.image_url
+          ctx.save()
+          ctx.beginPath()
+          ctx.arc(n.x, n.y, n.r - 2, 0, Math.PI * 2)
+          ctx.clip()
+          ctx.drawImage(img, n.x - n.r + 2, n.y - n.r + 2, (n.r - 2) * 2, (n.r - 2) * 2)
+          ctx.restore()
+        } else {
+          ctx.font = 'bold 14px Georgia'
+          ctx.fillStyle = '#d4c9b0'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText(n.id[0].toUpperCase(), n.x, n.y)
+        }
+
+        // Name label
+        ctx.font = '11px Georgia'
+        ctx.fillStyle = '#d4c9b0'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'top'
+        ctx.fillText(n.id, n.x, n.y + n.r + 4)
+      })
+    }
+
+    function loop() {
+      simulate()
+      draw()
+      animRef.current = requestAnimationFrame(loop)
+    }
+    animRef.current = requestAnimationFrame(loop)
+
+    // Mouse events
+    function getNode(x, y) {
+      return nodesRef.current.find(n => Math.sqrt((n.x - x) ** 2 + (n.y - y) ** 2) < n.r + 8)
+    }
+
+    function onMouseDown(e) {
+      const rect = canvas.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      const node = getNode(x, y)
+      if (node) dragRef.current = { id: node.id, startX: x, startY: y, moved: false }
+    }
+
+    function onMouseMove(e) {
+      const rect = canvas.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      if (dragRef.current) {
+        const dist = Math.sqrt((x - dragRef.current.startX) ** 2 + (y - dragRef.current.startY) ** 2)
+        if (dist > 3) dragRef.current.moved = true
+        const node = nodesRef.current.find(n => n.id === dragRef.current.id)
+        if (node) { node.x = x; node.y = y; node.vx = 0; node.vy = 0 }
+      }
+      const hover = getNode(x, y)
+      canvas.style.cursor = hover ? 'pointer' : 'default'
+      setTooltip(hover ? { name: hover.id, x: e.clientX, y: e.clientY } : null)
+    }
+
+    function onMouseUp(e) {
+      const rect = canvas.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      if (dragRef.current && !dragRef.current.moved) {
+        const node = nodesRef.current.find(n => n.id === dragRef.current.id)
+        if (node) onCharacterClick(node.character)
+      }
+      dragRef.current = null
+    }
+
+    canvas.addEventListener('mousedown', onMouseDown)
+    canvas.addEventListener('mousemove', onMouseMove)
+    canvas.addEventListener('mouseup', onMouseUp)
+
+    return () => {
+      cancelAnimationFrame(animRef.current)
+      canvas.removeEventListener('mousedown', onMouseDown)
+      canvas.removeEventListener('mousemove', onMouseMove)
+      canvas.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [characters])
+
+  if (characters.length === 0) {
+    return <p style={{ color: '#6b6357', fontStyle: 'italic' }}>No characters recorded yet.</p>
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <canvas ref={canvasRef} style={{ width: '100%', height: '600px', borderRadius: '4px', border: '1px solid #2a2a2a', display: 'block' }} />
+      {tooltip && (
+        <div style={{ position: 'fixed', left: tooltip.x + 12, top: tooltip.y - 10, background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '3px', padding: '0.3rem 0.6rem', fontSize: '0.8rem', color: '#d4c9b0', pointerEvents: 'none', zIndex: 200 }}>
+          {tooltip.name}
+        </div>
+      )}
+      <div style={{ marginTop: '1rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+        {[
+          { colour: '#4a7a4a', label: 'Friend / Ally' },
+          { colour: '#7a4a4a', label: 'Rival / Enemy' },
+          { colour: '#6a4a7a', label: 'Family' },
+          { colour: '#4a6a7a', label: 'Mentor / Student' },
+          { colour: '#8b4a6a', label: 'Romantic' },
+          { colour: '#5a5a4a', label: 'Other' },
+        ].map(({ colour, label }) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <div style={{ width: '20px', height: '2px', background: colour }} />
+            <span style={{ color: '#6b6357', fontSize: '0.8rem' }}>{label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function EntryForm({ onSave, onCancel, title, form, setForm, activeTab, imageFile, setImageFile, uploading }) {
   const fields = FIELDS[activeTab]
   return (
@@ -143,8 +426,7 @@ function TimelineEventForm({ form, setForm, onSave, onCancel, title }) {
       </div>
       <div style={{ marginBottom: '1rem' }}>
         <label style={s.label}>Era</label>
-        <select value={form.era || ''} onChange={e => setForm(p => ({ ...p, era: e.target.value }))}
-          style={{ ...s.input, cursor: 'pointer' }}>
+        <select value={form.era || ''} onChange={e => setForm(p => ({ ...p, era: e.target.value }))} style={{ ...s.input, cursor: 'pointer' }}>
           <option value="">Select an era...</option>
           {ERAS.map(era => <option key={era.name} value={era.name}>{era.name}</option>)}
         </select>
@@ -219,39 +501,34 @@ function TimelinePage({ onEntryClick }) {
       <div style={{ marginBottom: '2rem' }}>
         <button onClick={() => { setShowForm(!showForm); setForm({}); setEditingEvent(null) }} style={s.btnPrimary}>+ New Event</button>
       </div>
-
       {showForm && !editingEvent && (
         <TimelineEventForm form={form} setForm={setForm} onSave={handleSave} onCancel={() => setShowForm(false)} title="New Event" />
       )}
-
       {editingEvent && (
         <TimelineEventForm form={form} setForm={setForm} onSave={handleUpdate} onCancel={() => { setEditingEvent(null); setForm({}) }} title={`Editing: ${editingEvent.title}`} />
       )}
-
-      {grouped.map((era, eraIndex) => (
+      {grouped.map(era => (
         <div key={era.name} style={{ marginBottom: '3rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
             <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: era.colour, flexShrink: 0 }} />
             <h2 style={{ margin: 0, fontSize: '1rem', color: era.colour, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{era.name}</h2>
             <div style={{ flex: 1, height: '1px', background: era.dimColour }} />
           </div>
-
           {era.events.length === 0 && (
             <p style={{ color: '#3a3a3a', fontStyle: 'italic', fontSize: '0.85rem', paddingLeft: '1.5rem' }}>No events recorded for this era.</p>
           )}
-
           <div style={{ position: 'relative', paddingLeft: '2rem' }}>
             {era.events.length > 0 && (
               <div style={{ position: 'absolute', left: '5px', top: 0, bottom: 0, width: '2px', background: era.dimColour }} />
             )}
-            {era.events.map((event, i) => {
+            {era.events.map(event => {
               const isExpanded = expandedId === event.id
               const linkedNames = event.linked_entries ? event.linked_entries.split(',').map(n => n.trim()).filter(Boolean) : []
               return (
                 <div key={event.id} style={{ position: 'relative', marginBottom: '1.5rem' }}>
-                  <div style={{ position: 'absolute', left: '-1.75rem', top: '0.6rem', width: '10px', height: '10px', borderRadius: '50%', background: era.colour, border: `2px solid #0f0f0f` }} />
+                  <div style={{ position: 'absolute', left: '-1.75rem', top: '0.6rem', width: '10px', height: '10px', borderRadius: '50%', background: era.colour, border: '2px solid #0f0f0f' }} />
                   <div
-                    style={{ background: '#141414', border: `1px solid ${isExpanded ? era.colour : '#2a2a2a'}`, borderRadius: '4px', padding: '1rem 1.2rem', cursor: 'pointer', transition: 'border-color 0.2s' }}
+                    style={{ background: '#141414', border: `1px solid ${isExpanded ? era.colour : '#2a2a2a'}`, borderRadius: '4px', padding: '1rem 1.2rem', cursor: 'pointer' }}
                     onClick={() => setExpandedId(isExpanded ? null : event.id)}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -478,12 +755,18 @@ export default function App() {
   const [imageFile, setImageFile] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [showExample, setShowExample] = useState(false)
+  const [allCharacters, setAllCharacters] = useState([])
 
-  useEffect(() => { fetchHomeText() }, [])
+  useEffect(() => { fetchHomeText(); fetchAllCharacters() }, [])
 
   async function fetchHomeText() {
     const { data } = await supabase.from('lore').select('*').eq('category', '__homepage__').single()
     if (data) setHomeText(data.description || '')
+  }
+
+  async function fetchAllCharacters() {
+    const { data } = await supabase.from('characters').select('*').order('name', { ascending: true })
+    setAllCharacters(data || [])
   }
 
   async function saveHomeText() {
@@ -500,10 +783,13 @@ export default function App() {
   async function fetchEntries() {
     const { data } = await supabase.from(activeTab).select('*').order('name', { ascending: true })
     setEntries((data || []).filter(e => e.category !== '__homepage__'))
+    if (activeTab === 'characters') {
+      setAllCharacters((data || []))
+    }
   }
 
   useEffect(() => {
-    if (authed && page !== 'home' && page !== 'timeline') fetchEntries()
+    if (authed && page !== 'home' && page !== 'timeline' && page !== 'relationships') fetchEntries()
     setSelected(null)
     setShowForm(false)
     setEditing(false)
@@ -618,6 +904,14 @@ export default function App() {
     }
   }
 
+  function handleMapCharacterClick(character) {
+    setActiveTab('characters')
+    setPage('section')
+    setSelected(character)
+    setShowExample(false)
+    setEditing(false)
+  }
+
   const filteredEntries = entries.filter(e =>
     Object.values(e).some(v => v?.toString().toLowerCase().includes(search.toLowerCase()))
   )
@@ -645,9 +939,8 @@ export default function App() {
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </span>
         ))}
-        <span onClick={() => navigate('timeline')} style={{ ...s.navLink, ...(page === 'timeline' ? s.navLinkActive : {}) }}>
-          Timeline
-        </span>
+        <span onClick={() => navigate('timeline')} style={{ ...s.navLink, ...(page === 'timeline' ? s.navLinkActive : {}) }}>Timeline</span>
+        <span onClick={() => navigate('relationships')} style={{ ...s.navLink, ...(page === 'relationships' ? s.navLinkActive : {}) }}>Relationships</span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <GlobalSearch onNavigate={handleGlobalNavigate} />
           <span style={{ ...s.navLink, fontSize: '0.8rem', whiteSpace: 'nowrap' }} onClick={() => setAuthed(false)}>Lock</span>
@@ -683,8 +976,9 @@ export default function App() {
             { tab: 'lore', label: 'Lore', desc: SECTION_DESCRIPTIONS.lore },
             { tab: 'factions', label: 'Factions', desc: SECTION_DESCRIPTIONS.factions },
             { tab: 'timeline', label: 'Timeline', desc: 'A chronicle of events across the known eras.' },
+            { tab: 'relationships', label: 'Relationships', desc: 'A visual map of connections between characters.' },
           ].map(({ tab, label, desc }) => (
-            <div key={tab} style={s.sectionLink} onClick={() => tab === 'timeline' ? navigate('timeline') : navigate('section', tab)}>
+            <div key={tab} style={s.sectionLink} onClick={() => ['timeline', 'relationships'].includes(tab) ? navigate(tab) : navigate('section', tab)}>
               <strong style={{ color: '#d4c9b0' }}>{label}</strong>
               <p style={{ margin: '0.3rem 0 0', color: '#6b6357', fontSize: '0.9rem' }}>{desc}</p>
             </div>
@@ -693,8 +987,17 @@ export default function App() {
       )}
 
       {/* Timeline */}
-      {page === 'timeline' && (
-        <TimelinePage onEntryClick={handleTimelineEntryClick} />
+      {page === 'timeline' && <TimelinePage onEntryClick={handleTimelineEntryClick} />}
+
+      {/* Relationships */}
+      {page === 'relationships' && (
+        <div style={s.container}>
+          <p style={{ color: '#6b6357', fontSize: '0.85rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Archive — Relationships</p>
+          <h1 style={{ fontSize: '1.8rem', color: '#d4c9b0', margin: '0.3rem 0 0.5rem' }}>Relationship Map</h1>
+          <p style={{ color: '#9a8f7a', fontStyle: 'italic', marginBottom: '1.5rem' }}>A visual record of connections between known individuals. Drag nodes to rearrange. Click to view character.</p>
+          <hr style={s.hr} />
+          <RelationshipMap characters={allCharacters} onCharacterClick={handleMapCharacterClick} />
+        </div>
       )}
 
       {/* Section list */}
